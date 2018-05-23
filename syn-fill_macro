@@ -1,0 +1,123 @@
+//made by Bea Carbone - 2016
+var color, sourceFilldir, sourceFillList, sourceSyndir, sourceSynList, maskDir, zipDir;
+var areaROIarray, areaSynarray, fillArea, synArea, fillColor, synColor, fillThresh, synThresh;
+var overArea, rotateAreaR, rotateAreaL;
+
+color = newArray("Green", "Red", "Blue", "Cyan");
+Dialog.create("");
+	Dialog.addChoice("Channel with fill", color, "Green");
+	Dialog.addChoice("Channel with a-syn", color, "Cyan")
+Dialog.show;
+
+fillColor = Dialog.getChoice();
+synColor = Dialog.getChoice();
+
+sourceFilldir = getDirectory("Choose folder for " + fillColor +" source images");
+sourceFillList = getFileList(sourceFilldir);
+sourceSyndir = getDirectory("Choose folder for " + synColor +" source images");
+sourceSynList = getFileList(sourceSyndir);
+
+maskDir = getDirectory("Choose folder for masks");
+zipDir = getDirectory("Choose folder to save ROI information in");
+
+Dialog.create("Threshold info");
+	Dialog.addNumber("For "+ fillColor,0);
+	Dialog.addNumber("For "+ synColor,0);
+Dialog.show;
+
+fillThresh = Dialog.getNumber();
+synThresh = Dialog.getNumber();
+
+run("Set Measurements...", "area area_fraction limit redirect=None decimal=3");
+
+ROIstring = fillColor+" threshold: "+fillThresh+"	"+synColor+" threshold: "+synThresh+"\nImage	area of fill 	area of a-syn	a-synArea/FillArea	%areaSynROI/FillROI	%area_ROIrotate90R	%area_ROIrotate90L\n";
+
+//enter thresholding values for two channels for mask settings 
+
+for(p=0;p<sourceFillList.length;p++){
+	//check and see if both fill and a-syn files exists + open them if they do
+	conditionFill = getFileList(sourceFilldir+sourceFillList[p]);
+	conditionSyn = getFileList(sourceSyndir+sourceSynList[p]);
+	imgName = File.getName(sourceFilldir+sourceFillList[p]);
+	temp = substring(imgName,0,(lengthOf(imgName)-(lengthOf(fillColor)+5)));
+	imgName = temp;
+	roiManager("reset");
+	if((File.exists(sourceFilldir+imgName+"_"+fillColor+".tif") && File.exists(sourceSyndir+imgName+"_"+synColor+".tif")) == true)	{
+		conditionFill = getFileList(sourceFilldir+sourceFillList[p]);
+		conditionSyn = getFileList(sourceSyndir+sourceSynList[p]);
+		imgName = File.getName(sourceFilldir+sourceFillList[p]);
+		temp = substring(imgName,0,(lengthOf(imgName)-(lengthOf(fillColor)+5)));
+		imgName = temp;
+		//change names
+		open(sourceFilldir+sourceFillList[p]);
+		rename("Fill");
+		open(sourceSyndir+sourceSynList[p]);
+		rename("Syn");
+
+		//create mask for a-syn
+		run("Clear Results");
+		selectImage("Syn");
+		run("Grays");
+		run("32-bit");
+		setThreshold(synThresh, 255);
+		run("Convert to Mask");
+		run("Convert to Mask");
+		rename("Syn-mask");
+		run("Make Binary");
+		run("Create Selection");
+		run("Measure");
+		if(getResult("Area")>0)	{
+			roiManager("Add");
+			synArea = getResult("Area");
+		}
+		roiManager("Save", zipDir + imgName +"_ROI.zip");
+		selectImage("Syn-mask");
+		saveAs("Tiff", maskDir+imgName+synColor);
+		close();
+
+		//create mask for fill
+		run("Clear Results");
+		selectImage("Fill");
+		run("Grays");
+		run("32-bit");
+		setThreshold(fillThresh, 255);
+		run("Convert to Mask");
+		run("Convert to Mask");
+		rename("Fill-mask");
+		run("Make Binary");
+		run("Create Selection");
+		run("Measure");
+		if(getResult("Area")>0)	{
+			roiManager("Add");
+			fillArea = getResult("Area");
+		}
+		run("Clear Results");
+		selectImage("Fill-mask");
+		roiManager("reset");
+		roiManager("open", zipDir + imgName +"_ROI.zip");
+		roiManager("measure");
+		saveAs("Tiff", maskDir+imgName+fillColor);
+		overArea = getResult("Area");
+		percentArea = getResult("%Area");
+
+		run("Clear Results");
+		selectImage(imgName+fillColor+".tif");
+		run("Rotate 90 Degrees Right");
+		roiManager("measure");
+		rotateAreaR = getResult("%Area");
+		run("Clear Results");
+		selectImage(imgName+fillColor+".tif");
+		run("Rotate 90 Degrees Left");
+		run("Rotate 90 Degrees Left");
+		roiManager("measure");
+		rotateAreaL = getResult("%Area");
+
+		close();
+
+		//print fill area, a-syn area, overlap area
+		ROIstring = ROIstring + imgName + "	" +fillArea + "	" + synArea + "	" + (synArea/fillArea) + "	" +percentArea+ "	" +rotateAreaR+ "	" +rotateAreaL+ "\n";
+		File.saveString(ROIstring, maskDir+"AreaCalc.xls");
+	}
+}
+
+print(ROIstring);
