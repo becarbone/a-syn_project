@@ -1,14 +1,14 @@
 //made by Bea Carbone - 2016
 var color,  sourceSyndir, sourceSynSub, maskDir, zipDir, nxnInt, totalsynArea;
 var areaROIarray, areaSynarray, synArea, synColor, synThresh;
-var overArea, nxnColor, sourceNxndir, sourceNxnSub, nxnThresh;
+var overArea, nxnColor, sourceNxndir, sourceNxnSub, nxnThresh, SynInt;
 
-waitForUser("Image files must be saved with subfolders for each condition.");
+waitForUser("Image files must be saved by channel with subfolders for each condition. \nthe names must end in _Color.tif");
 
 color = newArray("Green", "Red", "Blue", "Cyan");
 Dialog.create("");
 	Dialog.addChoice("Channel with a-syn", color, "Cyan");
-	Dialog.addChoice("Channel with HA-Nrx", color, "Red");
+	Dialog.addChoice("Channel with Nrx1a", color, "Red");
 Dialog.show;
 
 synColor = Dialog.getChoice();
@@ -37,7 +37,8 @@ nxnThresh = Dialog.getNumber();
 
 run("Set Measurements...", "area integrated area_fraction limit redirect=None decimal=3");
 
-ROIstring = "Image	area of a-syn(um^2)	area of Nxn	NxnIntensity	%coverage a-syn/Nxn	\n";
+ROIstring = nxnColor+" threshold: "+nxnThresh+"	"+synColor+" threshold: "+synThresh+"\nImage	area of fill(um) 	area of a-syn(um)	a-synArea(um)overNxnArea	%areaSynROIoverFillROI	%area_ROIrotate90R	%area_ROIrotate90L	IntensityNxn	IntensitySyn\n";
+
 
 //enter thresholding values for two channels for mask settings 
 p=0;
@@ -66,12 +67,19 @@ while(p<(sourceNxnList.length))	{
 			open(sourceNxndir+sourceNxnList[p]+sourceNxnSub[l]);
 			run("Properties...", "channels=1 slices=1 frames=1 unit=micron pixel_width=0.1803752 pixel_height=0.1803752 voxel_depth=0.2092750");
 			rename("Nxn");
+			selectImage("Nxn");
 			run("Duplicate...", "duplicate");
 			selectImage("Nxn-1");
 			rename("Nxn-unmask");
+			selectImage("Nxn-unmask");
 			open(sourceSyndir+sourceSynList[p]+sourceSynSub[l]);
 			run("Properties...", "channels=1 slices=1 frames=1 unit=micron pixel_width=0.1803752 pixel_height=0.1803752 voxel_depth=0.2092750");
 			rename("Syn");
+			selectImage("Syn");
+			run("Duplicate...", "duplicate");
+			selectImage("Syn-1");
+			rename("Syn-unmask");
+			selectImage("Syn-unmask");
 	
 			//create mask for a-syn
 			run("Clear Results");
@@ -95,6 +103,15 @@ while(p<(sourceNxnList.length))	{
 			selectImage("Syn-mask");
 			saveAs("Tiff", maskDir+imgName+"_"+synColor);
 			close();
+
+			selectImage("Syn-unmask");
+			run("Properties...", "channels=1 slices=1 frames=1 unit=micron pixel_width=0.1803752 pixel_height=0.1803752 voxel_depth=0.2092750");
+			roiManager("Measure");
+			if(getResult("Area")>0)	{
+				SynInt = getResult("IntDen",0);
+			}
+			selectImage("Syn-unmask");
+			close();
 	
 			//create mask for nxn
 			roiManager("reset");
@@ -113,10 +130,12 @@ while(p<(sourceNxnList.length))	{
 				roiManager("Add");
 				nxnArea = getResult("Area");
 			}
+
 			selectImage("Nxn-unmask");
-			run("Measure");
+			run("Properties...", "channels=1 slices=1 frames=1 unit=micron pixel_width=0.1803752 pixel_height=0.1803752 voxel_depth=0.2092750");
+			roiManager("Measure");
 			if(getResult("Area")>0)	{
-				nxnInt = getResult("IntDen");
+				nxnInt = getResult("IntDen",0);
 			}
 			run("Clear Results");
 			selectImage("Nxn-mask");
@@ -128,13 +147,27 @@ while(p<(sourceNxnList.length))	{
 			for(q=0;q<nResults;q++){
 				overArea = overArea+getResult("Area");
 			}
+
+			run("Clear Results");
+			selectImage(imgName+"_"+nxnColor+".tif");
+			run("Rotate 90 Degrees Right");
+			roiManager("measure");
+			rotateAreaR = getResult("%Area");
+			run("Clear Results");
+			selectImage(imgName+"_"+nxnColor+".tif");
+			run("Rotate 90 Degrees Left");
+			run("Rotate 90 Degrees Left");
+			roiManager("measure");
+			rotateAreaL = getResult("%Area");
+
 			close();
 			selectImage("Nxn-unmask");
 			close();
-			ROIstring = ROIstring + imgName + "	" +  synArea+ "	" +overArea + "	" + nxnInt + "	" +((overArea/totalsynArea)*100)+ "\n";	
+			ROIstring = ROIstring + imgName + "	" +nxnArea + "	" + synArea + "	" + (synArea*(overArea/100)) + "	" +overArea+  "	" +rotateAreaR+ "	" +rotateAreaL+ "	" +nxnInt+ "	" +synArea+"\n";
+		
 		}
 	}
 	p = p+1;
 }
-File.saveString(ROIstring, maskDir+"AreaCalc.xls");
+File.saveString(ROIstring, maskDir+"results.xls");
 print(ROIstring);
